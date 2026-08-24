@@ -1,17 +1,23 @@
 from fastapi import (
     APIRouter,
     Depends,
+    Path,
     Query,
-    status,
 )
 
 from sqlalchemy.orm import Session
 
-from app.db.database import get_session
+from app.db.database import (
+    get_session,
+)
 
 from app.dependencies.auth import (
     get_current_user,
     require_roles,
+)
+
+from app.dependencies.rate_limit import (
+    resolution_rate_limit,
 )
 
 from app.models.user import User
@@ -36,7 +42,7 @@ router = APIRouter(
 
 
 # ==========================================================
-# RESOLVE A MENTION
+# RESOLVE MENTION
 # ==========================================================
 
 @router.post(
@@ -44,9 +50,17 @@ router = APIRouter(
     response_model=ResolutionResponse,
 )
 def resolve_mention(
-    mention_id: int,
 
     data: ResolveMentionRequest,
+
+    mention_id: int = Path(
+        ...,
+        gt=0,
+    ),
+
+    _rate_limit: None = Depends(
+        resolution_rate_limit
+    ),
 
     session: Session = Depends(
         get_session
@@ -60,15 +74,20 @@ def resolve_mention(
     ),
 ):
 
-    return ResolutionService.resolve_mention(
-        session=session,
-        mention_id=mention_id,
-        max_candidates=data.max_candidates,
+    return (
+        ResolutionService
+        .resolve_mention(
+            session=session,
+            mention_id=mention_id,
+            max_candidates=(
+                data.max_candidates
+            ),
+        )
     )
 
 
 # ==========================================================
-# GET ALL RESOLUTION RESULTS
+# GET RESOLUTION RESULTS
 # ==========================================================
 
 @router.get(
@@ -97,10 +116,13 @@ def get_resolution_results(
     ),
 ):
 
-    return ResolutionService.get_resolution_results(
-        session=session,
-        page=page,
-        page_size=page_size,
+    return (
+        ResolutionService
+        .get_resolution_results(
+            session=session,
+            page=page,
+            page_size=page_size,
+        )
     )
 
 
@@ -137,10 +159,13 @@ def get_review_queue(
     ),
 ):
 
-    return ResolutionService.get_review_queue(
-        session=session,
-        page=page,
-        page_size=page_size,
+    return (
+        ResolutionService
+        .get_review_queue(
+            session=session,
+            page=page,
+            page_size=page_size,
+        )
     )
 
 
@@ -154,9 +179,12 @@ def get_review_queue(
 )
 def approve_resolution(
 
-    result_id: int,
-
     data: ReviewDecisionRequest,
+
+    result_id: int = Path(
+        ...,
+        gt=0,
+    ),
 
     session: Session = Depends(
         get_session
@@ -170,16 +198,15 @@ def approve_resolution(
     ),
 ):
 
-    result = (
-        ResolutionService.approve_resolution(
+    return (
+        ResolutionService
+        .approve_resolution(
             session=session,
             result_id=result_id,
             reviewer_id=current_user.id,
             notes=data.notes,
         )
     )
-
-    return result
 
 
 # ==========================================================
@@ -192,9 +219,12 @@ def approve_resolution(
 )
 def reject_resolution(
 
-    result_id: int,
-
     data: ReviewDecisionRequest,
+
+    result_id: int = Path(
+        ...,
+        gt=0,
+    ),
 
     session: Session = Depends(
         get_session
@@ -208,13 +238,12 @@ def reject_resolution(
     ),
 ):
 
-    result = (
-        ResolutionService.reject_resolution(
+    return (
+        ResolutionService
+        .reject_resolution(
             session=session,
             result_id=result_id,
             reviewer_id=current_user.id,
             notes=data.notes,
         )
     )
-
-    return result

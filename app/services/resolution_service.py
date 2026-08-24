@@ -24,6 +24,9 @@ from app.services.document_service import (
 
 class ResolutionService:
 
+    MIN_CANDIDATES = 1
+    MAX_CANDIDATES = 20
+
     @staticmethod
     def resolve_mention(
         session: Session,
@@ -31,45 +34,171 @@ class ResolutionService:
         max_candidates: int = 5,
     ) -> dict:
 
-        # --------------------------------------------------
-        # 1. Get mention
-        # --------------------------------------------------
+        # ==================================================
+        # 0. SERVICE-LEVEL INPUT VALIDATION
+        # ==================================================
+
+        # API validation normally catches these.
+        #
+        # This check is still useful because this service
+        # could also be called directly from tests,
+        # scripts, background tasks, or another service.
+
+        if (
+            not isinstance(
+                mention_id,
+                int,
+            )
+            or isinstance(
+                mention_id,
+                bool,
+            )
+            or mention_id < 1
+        ):
+
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+                detail=(
+                    "mention_id must be a "
+                    "positive integer."
+                ),
+            )
+
+        if (
+            not isinstance(
+                max_candidates,
+                int,
+            )
+            or isinstance(
+                max_candidates,
+                bool,
+            )
+        ):
+
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+                detail=(
+                    "max_candidates must be "
+                    "an integer."
+                ),
+            )
+
+        if (
+            max_candidates
+            < ResolutionService.MIN_CANDIDATES
+            or max_candidates
+            > ResolutionService.MAX_CANDIDATES
+        ):
+
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+                detail=(
+                    "max_candidates must be "
+                    "between 1 and 20."
+                ),
+            )
+
+        # ==================================================
+        # 1. GET MENTION
+        # ==================================================
 
         mention = (
             session.execute(
                 select(Mention)
                 .where(
-                    Mention.id == mention_id
+                    Mention.id
+                    == mention_id
                 )
             )
             .scalar_one_or_none()
         )
 
         if mention is None:
+
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=(
+                    status.HTTP_404_NOT_FOUND
+                ),
                 detail="Mention not found",
             )
 
-        # --------------------------------------------------
-        # 2. Make sure mention is pending
-        # --------------------------------------------------
+        # ==================================================
+        # 2. VALIDATE MENTION TEXT
+        # ==================================================
+
+        if (
+            mention.text is None
+            or not mention.text.strip()
+        ):
+
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY
+                ),
+                detail=(
+                    "Mention text cannot be empty."
+                ),
+            )
+
+        # ==================================================
+        # 3. MAKE SURE IT HAS NOT ALREADY BEEN PROCESSED
+        # ==================================================
 
         if (
             mention.resolution_status
             != ResolutionStatus.PENDING
         ):
+
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
+                status_code=(
+                    status.HTTP_409_CONFLICT
+                ),
                 detail=(
                     "Mention has already gone "
                     "through resolution."
                 ),
             )
 
-        # --------------------------------------------------
-        # 3. Find candidates
-        # --------------------------------------------------
+        # ==================================================
+        # 4. DETECT INCONSISTENT OLD RESULTS
+        # ==================================================
+
+        existing_result = (
+            session.execute(
+                select(
+                    ResolutionResult.id
+                )
+                .where(
+                    ResolutionResult.mention_id
+                    == mention.id
+                )
+                .limit(1)
+            )
+            .scalar_one_or_none()
+        )
+
+        if existing_result is not None:
+
+            raise HTTPException(
+                status_code=(
+                    status.HTTP_409_CONFLICT
+                ),
+                detail=(
+                    "This pending mention already has "
+                    "resolution results. Its state is "
+                    "inconsistent and should be reviewed."
+                ),
+            )
+
+        # ==================================================
+        # 5. FIND CANDIDATES
+        # ==================================================
 
         candidates = (
             CandidateService.get_candidates(
@@ -80,33 +209,78 @@ class ResolutionService:
         )
 
         if not candidates:
+
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=(
+                    status.HTTP_404_NOT_FOUND
+                ),
                 detail=(
                     "No candidate businesses found "
                     "for this mention."
                 ),
             )
 
-        # --------------------------------------------------
-        # 4. Remove previous candidate results
-        #    just in case resolution is retried.
-        # --------------------------------------------------
+        # Defensive protection.
+        #
+        # CandidateService already honors max_candidates,
+        # but keep the service from processing more than
+        # the requested amount.
 
-        previous_results = list(
-            session.execute(
-                select(ResolutionResult)
-                .where(
-                    ResolutionResult.mention_id
-                    == mention.id
+        candidates = candidates[
+            :max_candidates
+        ]
+
+        # ==================================================
+        # 6. VALIDATE CANDIDATE DATA
+        # ==================================================
+
+        for candidate in candidates:
+
+            business = candidate.get(
+                "business"
+            )
+
+            candidate_score = (
+                candidate.get(
+                    "score"
                 )
             )
-            .scalars()
-            .all()
-        )
 
-        for result in previous_results:
-            session.delete(result)
+            if business is None:
+
+                raise HTTPException(
+                    status_code=(
+                        status.HTTP_500_INTERNAL_SERVER_ERROR
+                    ),
+                    detail=(
+                        "Candidate service returned "
+                        "invalid business data."
+                    ),
+                )
+
+            if (
+                not isinstance(
+                    candidate_score,
+                    (int, float),
+                )
+                or isinstance(
+                    candidate_score,
+                    bool,
+                )
+                or candidate_score < 0
+                or candidate_score > 1
+            ):
+
+                raise HTTPException(
+                    status_code=(
+                        status.HTTP_500_INTERNAL_SERVER_ERROR
+                    ),
+                    detail=(
+                        "Candidate service returned "
+                        "an invalid confidence score."
+                    ),
+                )
+
 
         # --------------------------------------------------
         # 5. Get best candidate
