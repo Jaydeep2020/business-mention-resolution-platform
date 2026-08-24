@@ -37,6 +37,8 @@ class ResolutionResponse(BaseModel):
     confidence_score: float | None
     resolved_business_id: int | None
 
+    document_id: int | None = None
+
     candidates: list[CandidateResponse]
 
 

@@ -17,6 +17,10 @@ from app.services.candidate_service import (
     CandidateService,
 )
 
+from app.services.document_service import (
+    DocumentService,
+)
+
 
 class ResolutionService:
 
@@ -272,6 +276,27 @@ class ResolutionService:
             session.rollback()
             raise
 
+        # --------------------------------------------------
+        # Generate resolution summary for automatically
+        # resolved mentions.
+        # --------------------------------------------------
+
+        document_id = None
+
+        if (
+            mention.resolution_status
+            == ResolutionStatus.AUTO_RESOLVED
+        ):
+            document = (
+                DocumentService
+                .generate_resolution_summary(
+                    session=session,
+                    mention_id=mention.id,
+                )
+            )
+
+            document_id = document.id
+
         return {
             "mention_id": mention.id,
             "mention_text": mention.text,
@@ -284,6 +309,7 @@ class ResolutionService:
             "resolved_business_id": (
                 mention.resolved_business_id
             ),
+            "document_id": document_id,
             "candidates": [
                 {
                     "business_id": (
@@ -618,6 +644,15 @@ class ResolutionService:
 
             session.rollback()
             raise
+
+        # --------------------------------------------------
+        # Generate resolution summary after approval
+        # --------------------------------------------------
+
+        DocumentService.generate_resolution_summary(
+            session=session,
+            mention_id=mention.id,
+        )
 
         return result
 
