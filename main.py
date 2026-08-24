@@ -6,7 +6,7 @@ from app.api.category import router as category_router
 from app.api.mention import router as mention_router
 from app.api.resolution import router as resolution_router
 from app.api.document import router as document_router
-
+from app.api.extraction import router as extraction_router
 
 app = FastAPI(
     title="Business Mention Resolution Platform",
@@ -20,6 +20,7 @@ app.include_router(category_router)
 app.include_router(mention_router)
 app.include_router(resolution_router)
 app.include_router(document_router)
+app.include_router(extraction_router)
 
 
 @app.get("/")
