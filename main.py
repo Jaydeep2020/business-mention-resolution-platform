@@ -2,6 +2,8 @@ from fastapi import FastAPI
 
 from app.api.auth import router as auth_router
 from app.api.business import router as business_router
+from app.api.category import router as category_router
+from app.api.mention import router as mention_router
 
 
 app = FastAPI(
@@ -10,18 +12,14 @@ app = FastAPI(
 )
 
 
-app.include_router(
-    auth_router
-)
-
-app.include_router(
-    business_router
-)
+app.include_router(auth_router)
+app.include_router(business_router)
+app.include_router(category_router)
+app.include_router(mention_router)
 
 
 @app.get("/")
 def root():
-
     return {
         "message": "Business Mention Resolution Platform API",
         "status": "running",
