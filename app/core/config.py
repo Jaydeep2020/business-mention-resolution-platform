@@ -25,17 +25,28 @@ class Settings(BaseSettings):
         "sentence-transformers/all-MiniLM-L6-v2"
     )
 
-    # Number of texts encoded together.
     EMBEDDING_BATCH_SIZE: int = 64
 
-    # How many vector candidates FAISS should return
-    # before the final scoring step.
     VECTOR_SEARCH_CANDIDATES: int = 50
 
-    # Stored relative to project root.
     BUSINESS_VECTOR_INDEX_PATH: str = (
         "data/vector_store/businesses.faiss"
     )
+
+    # ======================================================
+    # CATALOG QUESTION ANSWERING
+    # ======================================================
+
+    OPENAI_API_KEY: str | None = None
+
+    # Keep this configurable.
+    QA_MODEL: str = "gpt-4o-mini"
+
+    # Maximum number of catalog records returned
+    # from one Q&A query.
+    QA_MAX_RESULTS: int = 10
+
+    QA_LLM_TIMEOUT_SECONDS: float = 30.0
 
     class Config:
 
