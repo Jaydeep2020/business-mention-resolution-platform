@@ -13,12 +13,29 @@ class Settings(BaseSettings):
     # RESOLUTION RATE LIMIT
     # ======================================================
 
-    # Maximum resolution requests a single logged-in user
-    # can make during one rate-limit window.
     RESOLUTION_RATE_LIMIT_REQUESTS: int = 10
 
-    # Window duration in seconds.
     RESOLUTION_RATE_LIMIT_WINDOW_SECONDS: int = 60
+
+    # ======================================================
+    # EMBEDDINGS
+    # ======================================================
+
+    EMBEDDING_MODEL_NAME: str = (
+        "sentence-transformers/all-MiniLM-L6-v2"
+    )
+
+    # Number of texts encoded together.
+    EMBEDDING_BATCH_SIZE: int = 64
+
+    # How many vector candidates FAISS should return
+    # before the final scoring step.
+    VECTOR_SEARCH_CANDIDATES: int = 50
+
+    # Stored relative to project root.
+    BUSINESS_VECTOR_INDEX_PATH: str = (
+        "data/vector_store/businesses.faiss"
+    )
 
     class Config:
 

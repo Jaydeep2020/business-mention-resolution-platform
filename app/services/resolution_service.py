@@ -510,6 +510,11 @@ class ResolutionService:
                     "name_score": (
                         candidate["name_score"]
                     ),
+                    "embedding_score": (
+                        candidate.get(
+                            "embedding_score"
+                        )
+                    ),
                     "city_score": (
                         candidate["city_score"]
                     ),

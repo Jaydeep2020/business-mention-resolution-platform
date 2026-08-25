@@ -60,6 +60,12 @@ class CandidateResponse(BaseModel):
         le=1,
     )
 
+    embedding_score: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+    )
+
     city_score: float = Field(
         ge=0,
         le=1,
