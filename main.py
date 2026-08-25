@@ -8,6 +8,7 @@ from app.api.resolution import router as resolution_router
 from app.api.document import router as document_router
 from app.api.extraction import router as extraction_router
 from app.api.qa import router as qa_router
+from app.api.assistant import router as assistant_router
 
 
 app = FastAPI(
@@ -24,6 +25,7 @@ app.include_router(resolution_router)
 app.include_router(document_router)
 app.include_router(extraction_router)
 app.include_router(qa_router)
+app.include_router(assistant_router)
 
 
 @app.get("/")

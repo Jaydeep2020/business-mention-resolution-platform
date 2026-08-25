@@ -39,14 +39,29 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: str | None = None
 
-    # Keep this configurable.
     QA_MODEL: str = "gpt-4o-mini"
 
-    # Maximum number of catalog records returned
-    # from one Q&A query.
     QA_MAX_RESULTS: int = 10
 
     QA_LLM_TIMEOUT_SECONDS: float = 30.0
+
+    # ======================================================
+    # SMART RESOLUTION ASSISTANT
+    # ======================================================
+
+    ASSISTANT_MODEL: str = "gpt-4o-mini"
+
+    ASSISTANT_LLM_TIMEOUT_SECONDS: float = 30.0
+
+    # The LLM must be at least this confident before
+    # we allow its recommendation to auto-resolve.
+    ASSISTANT_LLM_CONFIDENCE_THRESHOLD: float = 0.85
+
+    # Even if the LLM is confident, the underlying
+    # candidate score must not be extremely weak.
+    ASSISTANT_MIN_CANDIDATE_SCORE: float = 0.70
+
+    ASSISTANT_MAX_CANDIDATES: int = 5
 
     class Config:
 

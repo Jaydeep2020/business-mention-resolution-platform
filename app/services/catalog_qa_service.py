@@ -1,5 +1,7 @@
 # The LLM interprets the question, but this service controls all database queries.
 
+## It can Access : Businesses, Categories, Mentions tables from DB
+
 from sqlalchemy import (
     and_,
     func,
