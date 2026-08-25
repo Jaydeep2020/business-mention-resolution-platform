@@ -47,8 +47,8 @@ from app.services.candidate_service import (
     CandidateService,
 )
 
-from app.services.document_service import (
-    DocumentService,
+from app.clients.document_client import (
+    DocumentClient,
 )
 
 
@@ -1313,18 +1313,13 @@ def persist_decision_node(
         mention.resolution_status
         == ResolutionStatus.AUTO_RESOLVED
     ):
-
-        document = (
-            DocumentService
+        document_id = (
+            DocumentClient
             .generate_resolution_summary(
-                session=session,
                 mention_id=mention.id,
             )
         )
 
-        document_id = (
-            document.id
-        )
 
     # ======================================================
     # RESPONSE

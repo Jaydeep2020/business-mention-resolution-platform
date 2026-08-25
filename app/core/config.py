@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     )
 
     # ======================================================
-    # CATALOG QUESTION ANSWERING
+    # Q&A
     # ======================================================
 
     OPENAI_API_KEY: str | None = None
@@ -46,22 +46,33 @@ class Settings(BaseSettings):
     QA_LLM_TIMEOUT_SECONDS: float = 30.0
 
     # ======================================================
-    # SMART RESOLUTION ASSISTANT
+    # SMART ASSISTANT
     # ======================================================
 
     ASSISTANT_MODEL: str = "gpt-4o-mini"
 
     ASSISTANT_LLM_TIMEOUT_SECONDS: float = 30.0
 
-    # The LLM must be at least this confident before
-    # we allow its recommendation to auto-resolve.
     ASSISTANT_LLM_CONFIDENCE_THRESHOLD: float = 0.85
 
-    # Even if the LLM is confident, the underlying
-    # candidate score must not be extremely weak.
     ASSISTANT_MIN_CANDIDATE_SCORE: float = 0.70
 
     ASSISTANT_MAX_CANDIDATES: int = 5
+
+    # ======================================================
+    # SERVICE COMMUNICATION
+    # ======================================================
+
+    DOCUMENT_SERVICE_URL: str = (
+        "http://127.0.0.1:8001"
+    )
+
+    SERVICE_HTTP_TIMEOUT_SECONDS: float = 10.0
+
+    # Shared ONLY between your two backend services.
+    INTERNAL_SERVICE_TOKEN: str = (
+        "change-this-internal-service-token"
+    )
 
     class Config:
 

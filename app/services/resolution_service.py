@@ -17,8 +17,8 @@ from app.services.candidate_service import (
     CandidateService,
 )
 
-from app.services.document_service import (
-    DocumentService,
+from app.clients.document_client import (
+    DocumentClient,
 )
 
 
@@ -458,18 +458,15 @@ class ResolutionService:
         document_id = None
 
         if (
-            mention.resolution_status
-            == ResolutionStatus.AUTO_RESOLVED
+                mention.resolution_status
+                == ResolutionStatus.AUTO_RESOLVED
         ):
-            document = (
-                DocumentService
+            document_id = (
+                DocumentClient
                 .generate_resolution_summary(
-                    session=session,
                     mention_id=mention.id,
                 )
             )
-
-            document_id = document.id
 
         return {
             "mention_id": mention.id,
@@ -828,8 +825,7 @@ class ResolutionService:
         # Generate resolution summary after approval
         # --------------------------------------------------
 
-        DocumentService.generate_resolution_summary(
-            session=session,
+        DocumentClient.generate_resolution_summary(
             mention_id=mention.id,
         )
 
