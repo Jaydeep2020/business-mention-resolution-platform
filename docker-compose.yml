@@ -1,0 +1,103 @@
+services:
+
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+
+    container_name: business-postgres
+
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+
+  catalog-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.catalog
+
+    container_name: catalog-service
+
+    restart: unless-stopped
+
+    ports:
+      - "8000:8000"
+
+    environment:
+      DB_KEY: >-
+        postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+
+      DOCUMENT_SERVICE_URL: http://document-service:8001
+
+      BUSINESS_VECTOR_INDEX_PATH: data/vector_store/businesses.faiss
+
+    volumes:
+      - ./data/vector_store:/app/data/vector_store
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+
+  document-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.document
+
+    container_name: document-service
+
+    restart: unless-stopped
+
+    ports:
+      - "8001:8001"
+
+    environment:
+      DOCUMENT_DB_KEY: >-
+        postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
+      CATALOG_SERVICE_URL: http://catalog-service:8000
+
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+
+      DOCUMENTS_DIR: data/documents
+
+    volumes:
+      - ./data/documents:/app/document_service/data/documents
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+      catalog-service:
+        condition: service_started
+
+
+volumes:
+  postgres_data:

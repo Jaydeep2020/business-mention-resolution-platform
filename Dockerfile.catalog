@@ -1,0 +1,45 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+
+# System dependencies
+RUN apt-get update \
+    && apt-get install -y \
+        --no-install-recommends \
+        build-essential \
+        libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+
+# Python requirements
+COPY requirements.catalog.txt .
+
+RUN pip install --upgrade pip
+
+RUN pip install \
+    --index-url https://download.pytorch.org/whl/cpu \
+    torch
+
+RUN pip install \
+    --no-cache-dir \
+    -r requirements.catalog.txt
+
+
+# App code
+COPY app ./app
+
+COPY main.py ./main.py
+
+
+# Alembic
+COPY alembic.ini ./alembic.ini
+
+COPY alembic ./alembic
+
+
+# Start Catalog Service
+CMD ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"]

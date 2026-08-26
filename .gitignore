@@ -1,18 +1,119 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
-
-# Virtual environments
-.venv
+# =========================================================
+# Environment / Secrets
+# =========================================================
 .env
+.env.*
+!.env.example
 
-data/
+# Streamlit secrets
+.streamlit/secrets.toml
 
 
-tests/
+# =========================================================
+# Python Virtual Environments
+# =========================================================
+.venv/
+venv/
+env/
+ENV/
 
-Notebooks/
+
+# =========================================================
+# Python Cache
+# =========================================================
+__pycache__/
+*.py[cod]
+*$py.class
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+*.egg-info/
+dist/
+build/
+
+
+# =========================================================
+# Test / Coverage Files
+# =========================================================
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+
+# =========================================================
+# Logs
+# =========================================================
+*.log
+logs/
+
+
+# =========================================================
+# Yelp Dataset
+# Large downloaded source data should NOT go to GitHub
+# =========================================================
+data/raw_data/*
+!data/raw_data/.gitkeep
+
+
+# =========================================================
+# FAISS / Generated Embeddings
+# Can be rebuilt using utilities/build_business_embeddings.py
+# =========================================================
+data/vector_store/*
+!data/vector_store/.gitkeep
+
+*.faiss
+
+
+# =========================================================
+# Generated PDF Documents
+# =========================================================
+data/documents/*
+!data/documents/.gitkeep
+
+
+# =========================================================
+# PostgreSQL Dumps / Backup Files
+# Usually large and should not be committed
+# =========================================================
+docker/postgres/seed/*.dump
+docker/postgres/seed/*.backup
+
+*.dump
+*.backup
+
+
+# =========================================================
+# Local Databases
+# =========================================================
+*.db
+*.sqlite
+*.sqlite3
+
+
+# =========================================================
+# IDE Files
+# =========================================================
+.vscode/
+.idea/
+
+
+# =========================================================
+# Operating System Files
+# =========================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# =========================================================
+# Temporary Files
+# =========================================================
+*.tmp
+*.temp
+*.swp
+*.swo
+~$*
