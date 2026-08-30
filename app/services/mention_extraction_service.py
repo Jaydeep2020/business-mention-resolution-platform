@@ -1,31 +1,12 @@
-from fastapi import (
-    HTTPException,
-    status,
-)
+from fastapi import HTTPException, status
 
-from sqlalchemy import (
-    func,
-    select,
-)
-
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.nlp import (
-    GLINER_MODEL_NAME,
-    extract_business_entities,
-)
-
-from app.models.mention import (
-    Mention,
-)
-
-from app.models.enums import (
-    ResolutionStatus,
-)
-
-from app.schemas.extraction import (
-    ExtractMentionsRequest,
-)
+from app.core.nlp import GLINER_MODEL_NAME, extract_business_entities
+from app.models.mention import Mention
+from app.models.enums import ResolutionStatus
+from app.schemas.extraction import ExtractMentionsRequest
 
 
 class MentionExtractionService:
@@ -35,12 +16,7 @@ class MentionExtractionService:
     # ======================================================
 
     @staticmethod
-    def find_existing_mention(
-        session: Session,
-        mention_text: str,
-        source_id: str | None,
-        source_type,
-    ) -> Mention | None:
+    def find_existing_mention(session: Session, mention_text: str, source_id: str | None, source_type ) -> Mention | None:
         """
         Prevent duplicate Mention rows when the same
         source is processed again.
@@ -60,27 +36,10 @@ class MentionExtractionService:
             return None
 
         mention = (
-            session.execute(
-                select(Mention)
-                .where(
-                    Mention.source_id
-                    == source_id,
-
-                    Mention.source_type
-                    == source_type,
-
-                    func.lower(
-                        func.trim(
-                            Mention.text
-                        )
-                    )
-                    == mention_text
-                    .strip()
-                    .lower(),
-                )
-                .limit(1)
-            )
-            .scalar_one_or_none()
+            session.execute(select(Mention).where(Mention.source_id  == source_id, Mention.source_type == source_type,
+                    func.lower(func.trim(Mention.text)) == mention_text.strip().lower(),
+                ).limit(1)
+            ).scalar_one_or_none()
         )
 
         return mention
@@ -91,27 +50,18 @@ class MentionExtractionService:
     # ======================================================
 
     @classmethod
-    def extract_mentions(
-        cls,
-        session: Session,
-        data: ExtractMentionsRequest,
-    ) -> dict:
+    def extract_mentions(cls, session: Session, data: ExtractMentionsRequest) -> dict:
 
         # --------------------------------------------------
         # Defensive validation
         # --------------------------------------------------
 
-        source_text = (
-            data.text.strip()
-        )
+        source_text = (data.text.strip())
 
         if not source_text:
 
             raise HTTPException(
-                status_code=(
-                    status
-                    .HTTP_422_UNPROCESSABLE_ENTITY
-                ),
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
                     "Source text cannot be empty."
                 ),
@@ -124,9 +74,7 @@ class MentionExtractionService:
         try:
 
             extracted_entities = (
-                extract_business_entities(
-                    source_text
-                )
+                extract_business_entities(source_text)
             )
 
         except RuntimeError as exc:
@@ -134,10 +82,7 @@ class MentionExtractionService:
             # Usually means en_core_web_sm
             # wasn't installed.
             raise HTTPException(
-                status_code=(
-                    status
-                    .HTTP_503_SERVICE_UNAVAILABLE
-                ),
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=str(exc),
             )
 
@@ -148,19 +93,11 @@ class MentionExtractionService:
         if not data.save_mentions:
 
             return {
-                "source_id": (
-                    data.source_id
-                ),
-                "source_type": (
-                    data.source_type
-                ),
-                "model": (
-                    GLINER_MODEL_NAME
-                ),
+                "source_id": data.source_id,
+                "source_type": data.source_type,
+                "model": GLINER_MODEL_NAME,
                 "saved": False,
-                "total_extracted": len(
-                    extracted_entities
-                ),
+                "total_extracted": len(extracted_entities),
                 "created_count": 0,
                 "reused_count": 0,
                 "mentions": [
@@ -187,9 +124,7 @@ class MentionExtractionService:
 
             for entity in extracted_entities:
 
-                mention_text = (
-                    entity["text"]
-                )
+                mention_text = (entity["text"])
 
                 # ------------------------------------------
                 # Avoid duplicate rows
@@ -200,9 +135,7 @@ class MentionExtractionService:
                         session=session,
                         mention_text=mention_text,
                         source_id=data.source_id,
-                        source_type=(
-                            data.source_type
-                        ),
+                        source_type=data.source_type,
                     )
                 )
 
@@ -213,9 +146,7 @@ class MentionExtractionService:
                     response_mentions.append(
                         {
                             **entity,
-                            "mention_id": (
-                                existing_mention.id
-                            ),
+                            "mention_id": existing_mention.id,
                             "created": False,
                         }
                     )

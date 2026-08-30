@@ -1,140 +1,73 @@
 import json
-
-from typing import (
-    Any,
-    Literal,
-)
-
+from typing import Any, Literal
 from typing_extensions import TypedDict
 
-from fastapi import (
-    HTTPException,
-    status,
-)
+from fastapi import HTTPException, status
 
 from sqlalchemy import select
-
 from sqlalchemy.orm import Session
 
-from langgraph.graph import (
-    END,
-    START,
-    StateGraph,
-)
+from langgraph.graph import StateGraph, START, END
 
 from app.core.config import settings
-
-from app.core.llm import (
-    get_assistant_llm,
-)
-
+from app.core.llm import get_assistant_llm
 from app.models.mention import Mention
+from app.models.resolution_result import ResolutionResult
 
-from app.models.resolution_result import (
-    ResolutionResult,
-)
+from app.models.enums import ResolutionDecision, ResolutionStatus
+from app.schemas.assistant import AssistantRecommendation
 
-from app.models.enums import (
-    ResolutionDecision,
-    ResolutionStatus,
-)
-
-from app.schemas.assistant import (
-    AssistantRecommendation,
-)
-
-from app.services.candidate_service import (
-    CandidateService,
-)
-
-from app.clients.document_client import (
-    DocumentClient,
-)
+from app.services.candidate_service import CandidateService
+from app.clients.document_client import DocumentClient
 
 
 # ==========================================================
 # GRAPH STATE
 # ==========================================================
 
-class ResolutionAssistantState(
-    TypedDict,
-    total=False,
-):
+class ResolutionAssistantState(TypedDict, total=False):  # total=False means all fields are optional.
 
     # Inputs
     session: Session
-
     mention_id: int
-
     max_candidates: int
 
     # Loaded data
     mention: Mention
-
     candidates: list[dict]
-
     candidate_payload: list[dict]
 
     # Candidate analysis
     ambiguous: bool
-
     score_gap: float | None
-
     route: str
 
     # LLM recommendation
-    recommendation: (
-        AssistantRecommendation
-        | None
-    )
-
-    recommended_business_id: (
-        int | None
-    )
+    recommendation: (AssistantRecommendation | None)
+    recommended_business_id: (int | None)
 
     # Final validated decision
-    final_action: Literal[
-        "resolve",
-        "escalate",
-    ]
+    final_action: Literal["resolve", "escalate"]
 
-    selected_business_id: (
-        int | None
-    )
-
-    assistant_confidence: (
-        float | None
-    )
-
-    decision_source: Literal[
-        "rule",
-        "policy",
-        "llm",
-    ]
+    selected_business_id: (int | None)
+    assistant_confidence: (float | None)
+    decision_source: Literal["rule", "policy", "llm"]
 
     note: str
-
     document_id: int | None
-
     workflow_steps: list[str]
-
     response: dict
+
 
 
 # ==========================================================
 # HELPER
 # ==========================================================
 
-def add_step(
-    state: ResolutionAssistantState,
-    step: str,
-) -> list[str]:
+def add_step(state: ResolutionAssistantState, step: str) -> list[str]:
 
     return [
-        *state.get(
-            "workflow_steps",
-            [],
-        ),
+        *state.get("workflow_steps", []),
         step,
     ]
 
@@ -144,46 +77,29 @@ def add_step(
 # LOAD MENTION
 # ==========================================================
 
-def load_mention_node(
-    state: ResolutionAssistantState,
-) -> dict:
+def load_mention_node(state: ResolutionAssistantState) -> dict:
 
     session = state["session"]
 
-    mention_id = state[
-        "mention_id"
-    ]
+    mention_id = state["mention_id"]
 
     mention = (
         session.execute(
-            select(Mention)
-            .where(
-                Mention.id
-                == mention_id
-            )
-        )
-        .scalar_one_or_none()
+            select(Mention).where(Mention.id == mention_id)
+        ).scalar_one_or_none()
     )
 
     if mention is None:
 
         raise HTTPException(
-            status_code=(
-                status.HTTP_404_NOT_FOUND
-            ),
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Mention not found",
         )
 
-    if (
-        not mention.text
-        or not mention.text.strip()
-    ):
+    if not mention.text or not mention.text.strip():
 
         raise HTTPException(
-            status_code=(
-                status
-                .HTTP_422_UNPROCESSABLE_ENTITY
-            ),
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 "Mention text cannot be empty."
             ),
@@ -191,15 +107,10 @@ def load_mention_node(
 
     # The assistant works only on new,
     # unprocessed mentions.
-    if (
-        mention.resolution_status
-        != ResolutionStatus.PENDING
-    ):
+    if mention.resolution_status != ResolutionStatus.PENDING:
 
         raise HTTPException(
-            status_code=(
-                status.HTTP_409_CONFLICT
-            ),
+            status_code=status.HTTP_409_CONFLICT,
             detail=(
                 "Mention has already gone "
                 "through resolution."
@@ -210,24 +121,14 @@ def load_mention_node(
     # records connected to a pending mention.
     existing_result = (
         session.execute(
-            select(
-                ResolutionResult.id
-            )
-            .where(
-                ResolutionResult.mention_id
-                == mention.id
-            )
-            .limit(1)
-        )
-        .scalar_one_or_none()
+            select(ResolutionResult.id).where(ResolutionResult.mention_id == mention.id).limit(1)
+        ).scalar_one_or_none()
     )
 
     if existing_result is not None:
 
         raise HTTPException(
-            status_code=(
-                status.HTTP_409_CONFLICT
-            ),
+            status_code=status.HTTP_409_CONFLICT,
             detail=(
                 "This pending mention already "
                 "has resolution results."
@@ -236,10 +137,7 @@ def load_mention_node(
 
     return {
         "mention": mention,
-        "workflow_steps": add_step(
-            state,
-            "Loaded pending mention and source context.",
-        ),
+        "workflow_steps": add_step(state, "Loaded pending mention and source context."),
     }
 
 
@@ -248,25 +146,14 @@ def load_mention_node(
 # GENERATE CANDIDATES
 # ==========================================================
 
-def generate_candidates_node(
-    state: ResolutionAssistantState,
-) -> dict:
+def generate_candidates_node(state: ResolutionAssistantState) -> dict:
 
     session = state["session"]
-
     mention = state["mention"]
-
-    max_candidates = state[
-        "max_candidates"
-    ]
+    max_candidates = state["max_candidates"]
 
     candidates = (
-        CandidateService
-        .get_candidates(
-            session=session,
-            mention=mention,
-            max_candidates=max_candidates,
-        )
+        CandidateService.get_candidates(session=session, mention=mention, max_candidates=max_candidates)
     )
 
     if not candidates:
@@ -278,9 +165,7 @@ def generate_candidates_node(
         #
         # For now keep the mention untouched.
         raise HTTPException(
-            status_code=(
-                status.HTTP_404_NOT_FOUND
-            ),
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=(
                 "No candidate businesses were "
                 "found for this mention."
@@ -291,9 +176,7 @@ def generate_candidates_node(
 
     for candidate in candidates:
 
-        business = candidate[
-            "business"
-        ]
+        business = candidate["business"]
 
         categories = []
 
@@ -301,61 +184,26 @@ def generate_candidates_node(
         # can be loaded here.
         if business.categories:
 
-            categories = [
-                category.name
-                for category
-                in business.categories
-            ]
+            categories = [category.name for category in business.categories]
 
         candidate_payload.append(
             {
                 "business_id": business.id,
-
-                "catalog_business_id": (
-                    business.business_id
-                ),
-
-                "business_name": (
-                    business.name
-                ),
-
+                "catalog_business_id": business.business_id,
+                "business_name": business.name,
                 "city": business.city,
-
                 "state": business.state,
-
                 "address": business.address,
-
                 "categories": categories,
-
-                "is_verified": (
-                    business.is_verified
-                ),
-
-                "score": candidate[
-                    "score"
-                ],
-
-                "name_score": candidate[
-                    "name_score"
-                ],
-
+                "is_verified": business.is_verified,
+                "score": candidate["score"],
+                "name_score": candidate["name_score"],
                 "embedding_score": (
-                    candidate.get(
-                        "embedding_score"
-                    )
+                    candidate.get("embedding_score")
                 ),
-
-                "city_score": candidate[
-                    "city_score"
-                ],
-
-                "state_score": candidate[
-                    "state_score"
-                ],
-
-                "address_score": candidate[
-                    "address_score"
-                ],
+                "city_score": candidate["city_score"],
+                "state_score": candidate["state_score"],
+                "address_score": candidate["address_score"],
             }
         )
 
@@ -381,51 +229,29 @@ def generate_candidates_node(
 # ASSESS CANDIDATE QUALITY
 # ==========================================================
 
-def assess_candidates_node(
-    state: ResolutionAssistantState,
-) -> dict:
+def assess_candidates_node(state: ResolutionAssistantState) -> dict:
 
-    candidates = state[
-        "candidates"
-    ]
-
+    candidates = state["candidates"]
     best_candidate = candidates[0]
 
     best_business = (
-        best_candidate[
-            "business"
-        ]
+        best_candidate["business"]
     )
 
     best_score = float(
-        best_candidate[
-            "score"
-        ]
+        best_candidate["score"]
     )
 
     ambiguous = False
-
     score_gap = None
 
     if len(candidates) >= 2:
 
-        second_score = float(
-            candidates[1][
-                "score"
-            ]
-        )
+        second_score = float(candidates[1]["score"])
 
-        score_gap = round(
-            best_score
-            - second_score,
-            4,
-        )
+        score_gap = round(best_score - second_score, 4)
 
-        ambiguous = (
-            score_gap
-            < CandidateService
-            .AMBIGUITY_GAP
-        )
+        ambiguous = (score_gap < CandidateService.AMBIGUITY_GAP)
 
     # ------------------------------------------------------
     # Policy 1:
@@ -444,12 +270,7 @@ def assess_candidates_node(
     # No need to spend an LLM call.
     # ------------------------------------------------------
 
-    elif (
-        best_score
-        >= CandidateService
-        .AUTO_RESOLUTION_THRESHOLD
-        and not ambiguous
-    ):
+    elif best_score >= CandidateService.AUTO_RESOLUTION_THRESHOLD  and not ambiguous:
 
         route = "direct_resolve"
 
@@ -463,11 +284,8 @@ def assess_candidates_node(
 
     return {
         "ambiguous": ambiguous,
-
         "score_gap": score_gap,
-
         "route": route,
-
         "workflow_steps": add_step(
             state,
             (
@@ -482,9 +300,7 @@ def assess_candidates_node(
 # CONDITIONAL ROUTER
 # ==========================================================
 
-def route_after_assessment(
-    state: ResolutionAssistantState,
-) -> str:
+def route_after_assessment(state: ResolutionAssistantState) -> str:
 
     return state["route"]
 
@@ -494,13 +310,9 @@ def route_after_assessment(
 # POLICY FORCED REVIEW
 # ==========================================================
 
-def forced_review_node(
-    state: ResolutionAssistantState,
-) -> dict:
+def forced_review_node(state: ResolutionAssistantState) -> dict:
 
-    top = state[
-        "candidate_payload"
-    ][0]
+    top = state["candidate_payload"][0]
 
     note = (
         "Sent for review because the highest "
@@ -512,19 +324,13 @@ def forced_review_node(
 
     return {
         "final_action": "escalate",
-
         "selected_business_id": None,
-
         "recommended_business_id": (
             top["business_id"]
         ),
-
         "assistant_confidence": None,
-
         "decision_source": "policy",
-
         "note": note,
-
         "workflow_steps": add_step(
             state,
             (
@@ -540,13 +346,9 @@ def forced_review_node(
 # OBVIOUS MATCH
 # ==========================================================
 
-def direct_resolve_node(
-    state: ResolutionAssistantState,
-) -> dict:
+def direct_resolve_node(state: ResolutionAssistantState) -> dict:
 
-    top = state[
-        "candidate_payload"
-    ][0]
+    top = state["candidate_payload"][0]
 
     note = (
         "Smart assistant resolved the mention "
@@ -558,23 +360,17 @@ def direct_resolve_node(
 
     return {
         "final_action": "resolve",
-
         "selected_business_id": (
             top["business_id"]
         ),
-
         "recommended_business_id": (
             top["business_id"]
         ),
-
         "assistant_confidence": (
             top["score"]
         ),
-
         "decision_source": "rule",
-
         "note": note,
-
         "workflow_steps": add_step(
             state,
             (
@@ -590,27 +386,17 @@ def direct_resolve_node(
 # LLM CONTEXT ANALYSIS
 # ==========================================================
 
-def analyze_context_node(
-    state: ResolutionAssistantState,
-) -> dict:
+def analyze_context_node(state: ResolutionAssistantState) -> dict:
 
-    mention = state[
-        "mention"
-    ]
-
-    candidate_payload = state[
-        "candidate_payload"
-    ]
+    mention = state["mention"]
+    candidate_payload = state["candidate_payload"]
 
     try:
 
         llm = get_assistant_llm()
 
         structured_llm = (
-            llm.with_structured_output(
-                AssistantRecommendation,
-                method="json_schema",
-            )
+            llm.with_structured_output(AssistantRecommendation, method="json_schema")
         )
 
         system_prompt = """
@@ -666,28 +452,13 @@ IMPORTANT RULES:
         input_data = {
             "mention": {
                 "text": mention.text,
-
-                "source_text": (
-                    mention.source_text
-                ),
-
-                "source_id": (
-                    mention.source_id
-                ),
+                "source_text": mention.source_text,
+                "source_id": mention.source_id,
             },
 
             "candidate_ambiguity": {
-                "ambiguous": (
-                    state[
-                        "ambiguous"
-                    ]
-                ),
-
-                "score_gap": (
-                    state[
-                        "score_gap"
-                    ]
-                ),
+                "ambiguous": state["ambiguous"],
+                "score_gap": state["score_gap"],
             },
 
             "candidates": (
@@ -704,11 +475,7 @@ IMPORTANT RULES:
                     ),
                     (
                         "human",
-                        json.dumps(
-                            input_data,
-                            ensure_ascii=False,
-                            default=str,
-                        ),
+                        json.dumps(input_data, ensure_ascii=False, default=str),
                     ),
                 ]
             )
@@ -721,10 +488,7 @@ IMPORTANT RULES:
         # Do NOT change database state if the
         # LLM itself failed.
         raise HTTPException(
-            status_code=(
-                status
-                .HTTP_503_SERVICE_UNAVAILABLE
-            ),
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
                 "Smart assistant analysis "
                 "is currently unavailable."
@@ -732,15 +496,8 @@ IMPORTANT RULES:
         ) from exc
 
     return {
-        "recommendation": (
-            recommendation
-        ),
-
-        "recommended_business_id": (
-            recommendation
-            .selected_business_id
-        ),
-
+        "recommendation": recommendation,
+        "recommended_business_id": recommendation.selected_business_id,
         "workflow_steps": add_step(
             state,
             (
@@ -756,54 +513,26 @@ IMPORTANT RULES:
 # VALIDATE LLM RECOMMENDATION
 # ==========================================================
 
-def validate_recommendation_node(
-    state: ResolutionAssistantState,
-) -> dict:
+def validate_recommendation_node(state: ResolutionAssistantState) -> dict:
 
-    recommendation = state[
-        "recommendation"
-    ]
-
-    candidates = state[
-        "candidate_payload"
-    ]
-
+    recommendation = state["recommendation"]
+    candidates = state["candidate_payload"]
     candidate_map = {
-        candidate[
-            "business_id"
-        ]: candidate
-
-        for candidate in candidates
+        candidate["business_id"]: candidate for candidate in candidates
     }
 
     # ------------------------------------------------------
     # LLM itself decided to escalate
     # ------------------------------------------------------
 
-    if (
-        recommendation.action
-        == "escalate"
-    ):
+    if recommendation.action == "escalate":
 
         return {
-            "final_action": (
-                "escalate"
-            ),
-
-            "selected_business_id": (
-                None
-            ),
-
-            "assistant_confidence": (
-                recommendation.confidence
-            ),
-
+            "final_action": "escalate",
+            "selected_business_id": None,
+            "assistant_confidence": recommendation.confidence,
             "decision_source": "llm",
-
-            "note": (
-                recommendation.note
-            ),
-
+            "note": recommendation.note,
             "workflow_steps": add_step(
                 state,
                 (
@@ -817,18 +546,10 @@ def validate_recommendation_node(
     # LLM wants to resolve
     # ------------------------------------------------------
 
-    selected_id = (
-        recommendation
-        .selected_business_id
-    )
+    selected_id = recommendation.selected_business_id
 
     selected_candidate = (
-        candidate_map.get(
-            selected_id
-        )
-        if selected_id
-        is not None
-        else None
+        candidate_map.get(selected_id) if selected_id is not None else None
     )
 
     # ------------------------------------------------------
@@ -839,18 +560,9 @@ def validate_recommendation_node(
     if selected_candidate is None:
 
         return {
-            "final_action": (
-                "escalate"
-            ),
-
-            "selected_business_id": (
-                None
-            ),
-
-            "assistant_confidence": (
-                recommendation.confidence
-            ),
-
+            "final_action": "escalate",
+            "selected_business_id": None,
+            "assistant_confidence": recommendation.confidence,
             "decision_source": "llm",
 
             "note": (
@@ -873,25 +585,13 @@ def validate_recommendation_node(
     # unverified business.
     # ------------------------------------------------------
 
-    if not selected_candidate[
-        "is_verified"
-    ]:
+    if not selected_candidate["is_verified"]:
 
         return {
-            "final_action": (
-                "escalate"
-            ),
-
-            "selected_business_id": (
-                None
-            ),
-
-            "assistant_confidence": (
-                recommendation.confidence
-            ),
-
+            "final_action": "escalate",
+            "selected_business_id": None,
+            "assistant_confidence": recommendation.confidence,
             "decision_source": "policy",
-
             "note": (
                 "Sent for review because the "
                 "assistant selected an "
@@ -912,25 +612,12 @@ def validate_recommendation_node(
     # LLM confidence
     # ------------------------------------------------------
 
-    if (
-        recommendation.confidence
-        < settings
-        .ASSISTANT_LLM_CONFIDENCE_THRESHOLD
-    ):
+    if recommendation.confidence < settings.ASSISTANT_LLM_CONFIDENCE_THRESHOLD:
 
         return {
-            "final_action": (
-                "escalate"
-            ),
-
-            "selected_business_id": (
-                None
-            ),
-
-            "assistant_confidence": (
-                recommendation.confidence
-            ),
-
+            "final_action": "escalate",
+            "selected_business_id": None,
+            "assistant_confidence": recommendation.confidence,
             "decision_source": "llm",
 
             "note": (
@@ -955,25 +642,12 @@ def validate_recommendation_node(
     # underlying algorithm score
     # ------------------------------------------------------
 
-    if (
-        selected_candidate["score"]
-        < settings
-        .ASSISTANT_MIN_CANDIDATE_SCORE
-    ):
+    if selected_candidate["score"] < settings.ASSISTANT_MIN_CANDIDATE_SCORE:
 
         return {
-            "final_action": (
-                "escalate"
-            ),
-
-            "selected_business_id": (
-                None
-            ),
-
-            "assistant_confidence": (
-                recommendation.confidence
-            ),
-
+            "final_action": "escalate",
+            "selected_business_id": None,
+            "assistant_confidence": recommendation.confidence,
             "decision_source": "llm",
 
             "note": (
@@ -999,20 +673,9 @@ def validate_recommendation_node(
     # ------------------------------------------------------
 
     return {
-        "final_action": (
-            "resolve"
-        ),
-
-        "selected_business_id": (
-            selected_candidate[
-                "business_id"
-            ]
-        ),
-
-        "assistant_confidence": (
-            recommendation.confidence
-        ),
-
+        "final_action": "resolve",
+        "selected_business_id": selected_candidate["business_id"],
+        "assistant_confidence": recommendation.confidence,
         "decision_source": "llm",
 
         "note": (
@@ -1034,22 +697,11 @@ def validate_recommendation_node(
 # FIND CANDIDATE
 # ==========================================================
 
-def find_candidate(
-    state: ResolutionAssistantState,
-    business_id: int,
-) -> dict | None:
+def find_candidate(state: ResolutionAssistantState,business_id: int) -> dict | None:
 
-    for candidate in state[
-        "candidate_payload"
-    ]:
+    for candidate in state["candidate_payload"]:
 
-        if (
-            candidate[
-                "business_id"
-            ]
-            == business_id
-        ):
-
+        if candidate["business_id"] == business_id:
             return candidate
 
     return None
@@ -1060,46 +712,20 @@ def find_candidate(
 # PERSIST FINAL DECISION
 # ==========================================================
 
-def persist_decision_node(
-    state: ResolutionAssistantState,
-) -> dict:
+def persist_decision_node(state: ResolutionAssistantState) -> dict:
 
-    session = state[
-        "session"
-    ]
-
-    mention = state[
-        "mention"
-    ]
-
-    candidates = state[
-        "candidates"
-    ]
-
-    candidate_payload = state[
-        "candidate_payload"
-    ]
-
-    final_action = state[
-        "final_action"
-    ]
-
+    session = state["session"]
+    mention = state["mention"]
+    candidates = state["candidates"]
+    candidate_payload = state["candidate_payload"]
+    final_action = state["final_action"]
     note = state["note"]
 
-    selected_business_id = (
-        state.get(
-            "selected_business_id"
-        )
-    )
+    selected_business_id = state.get("selected_business_id")
 
-    recommended_business_id = (
-        state.get(
-            "recommended_business_id"
-        )
-    )
+    recommended_business_id = state.get("recommended_business_id")
 
     document_id = None
-
     selected_candidate = None
 
     # ======================================================
@@ -1111,10 +737,7 @@ def persist_decision_node(
         if selected_business_id is None:
 
             raise HTTPException(
-                status_code=(
-                    status
-                    .HTTP_500_INTERNAL_SERVER_ERROR
-                ),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=(
                     "Assistant resolution has no "
                     "selected business."
@@ -1122,58 +745,34 @@ def persist_decision_node(
             )
 
         selected_candidate = (
-            find_candidate(
-                state,
-                selected_business_id,
-            )
+            find_candidate(state, selected_business_id)
         )
 
         if selected_candidate is None:
 
             raise HTTPException(
-                status_code=(
-                    status
-                    .HTTP_500_INTERNAL_SERVER_ERROR
-                ),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=(
                     "Selected candidate could "
                     "not be found."
                 ),
             )
 
-        mention.resolution_status = (
-            ResolutionStatus
-            .AUTO_RESOLVED
-        )
+        mention.resolution_status = ResolutionStatus.AUTO_RESOLVED
 
-        mention.resolved_business_id = (
-            selected_business_id
-        )
+        mention.resolved_business_id = selected_business_id
 
         # Keep this field consistent with the rest
         # of your project: it stores the candidate
         # matching score.
-        mention.confidence_score = (
-            selected_candidate[
-                "score"
-            ]
-        )
+        mention.confidence_score = selected_candidate["score"]
 
         for candidate in candidates:
 
-            business = candidate[
-                "business"
-            ]
+            business = candidate["business"]
 
-            if (
-                business.id
-                == selected_business_id
-            ):
-
-                decision = (
-                    ResolutionDecision.AUTO
-                )
-
+            if business.id == selected_business_id:
+                decision = ResolutionDecision.AUTO
                 candidate_note = (
                     "Smart assistant resolution: "
                     + note
@@ -1183,9 +782,7 @@ def persist_decision_node(
 
                 # Keep behavior compatible with your
                 # existing ResolutionService.
-                decision = (
-                    ResolutionDecision.REVIEW
-                )
+                decision = ResolutionDecision.REVIEW
 
                 candidate_note = (
                     "Candidate considered during "
@@ -1210,56 +807,28 @@ def persist_decision_node(
     else:
 
         primary_business_id = (
-            recommended_business_id
-            or candidate_payload[0][
-                "business_id"
-            ]
+            recommended_business_id or candidate_payload[0]["business_id"]
         )
 
         primary_candidate = (
-            find_candidate(
-                state,
-                primary_business_id,
-            )
+            find_candidate(state, primary_business_id)
         )
 
         if primary_candidate is None:
 
-            primary_candidate = (
-                candidate_payload[0]
-            )
+            primary_candidate = candidate_payload[0]
 
-            primary_business_id = (
-                primary_candidate[
-                    "business_id"
-                ]
-            )
+            primary_business_id = primary_candidate["business_id"]
 
-        mention.resolution_status = (
-            ResolutionStatus
-            .SENT_FOR_REVIEWER
-        )
-
-        mention.resolved_business_id = (
-            None
-        )
-
-        mention.confidence_score = (
-            primary_candidate[
-                "score"
-            ]
-        )
+        mention.resolution_status = ResolutionStatus.SENT_FOR_REVIEWER
+        mention.resolved_business_id = None
+        mention.confidence_score = primary_candidate["score"]
 
         for candidate in candidates:
 
-            business = candidate[
-                "business"
-            ]
+            business = candidate["business"]
 
-            if (
-                business.id
-                == primary_business_id
-            ):
+            if business.id == primary_business_id:
 
                 candidate_note = (
                     "Sent for review because "
@@ -1309,15 +878,9 @@ def persist_decision_node(
     # CREATE RESOLUTION SUMMARY
     # ======================================================
 
-    if (
-        mention.resolution_status
-        == ResolutionStatus.AUTO_RESOLVED
-    ):
+    if mention.resolution_status == ResolutionStatus.AUTO_RESOLVED:
         document_id = (
-            DocumentClient
-            .generate_resolution_summary(
-                mention_id=mention.id,
-            )
+            DocumentClient.generate_resolution_summary(mention_id=mention.id)
         )
 
 
@@ -1329,20 +892,11 @@ def persist_decision_node(
 
     if selected_business_id:
 
-        selected_candidate = (
-            find_candidate(
-                state,
-                selected_business_id,
-            )
-        )
+        selected_candidate = find_candidate(state, selected_business_id)
 
         if selected_candidate:
 
-            selected_score = (
-                selected_candidate[
-                    "score"
-                ]
-            )
+            selected_score = selected_candidate["score"]
 
     workflow_steps = add_step(
         state,
@@ -1363,78 +917,20 @@ def persist_decision_node(
         ]
 
     response = {
-        "mention_id": (
-            mention.id
-        ),
-
-        "mention_text": (
-            mention.text
-        ),
-
-        "action": (
-            "resolved"
-            if final_action
-            == "resolve"
-            else "escalated"
-        ),
-
-        "decision_source": (
-            state[
-                "decision_source"
-            ]
-        ),
-
-        "resolution_status": (
-            mention
-            .resolution_status
-            .value
-        ),
-
-        "resolved_business_id": (
-            mention
-            .resolved_business_id
-        ),
-
-        "recommended_business_id": (
-            recommended_business_id
-        ),
-
-        "candidate_score": (
-            selected_score
-            if final_action
-            == "resolve"
-            else mention
-            .confidence_score
-        ),
-
-        "assistant_confidence": (
-            state.get(
-                "assistant_confidence"
-            )
-        ),
-
-        "ambiguous": (
-            state[
-                "ambiguous"
-            ]
-        ),
-
-        "score_gap": (
-            state.get(
-                "score_gap"
-            )
-        ),
-
+        "mention_id": mention.id,
+        "mention_text": mention.text,
+        "action": "resolved" if final_action == "resolve" else "escalated" ,
+        "decision_source": state["decision_source"],
+        "resolution_status": mention.resolution_status.value,
+        "resolved_business_id": mention.resolved_business_id,
+        "recommended_business_id": recommended_business_id,
+        "candidate_score": selected_score if final_action == "resolve" else mention.confidence_score,
+        "assistant_confidence": state.get("assistant_confidence"),
+        "ambiguous": state["ambiguous"],
+        "score_gap": state.get("score_gap"),
         "note": note,
-
-        "document_id": (
-            document_id
-        ),
-
-        "workflow_steps": (
-            workflow_steps
-        ),
-
+        "document_id": document_id,
+        "workflow_steps": workflow_steps,
         "candidates": (
             candidate_payload
         ),
@@ -1442,12 +938,8 @@ def persist_decision_node(
 
     return {
         "document_id": document_id,
-
-        "workflow_steps": (
-            workflow_steps
-        ),
-
-        "response": response,
+        "workflow_steps": workflow_steps,
+        "response": response
     }
 
 
@@ -1455,128 +947,47 @@ def persist_decision_node(
 # BUILD LANGGRAPH
 # ==========================================================
 
-workflow = StateGraph(
-    ResolutionAssistantState
-)
+workflow = StateGraph(ResolutionAssistantState)
 
 
-workflow.add_node(
-    "load_mention",
-    load_mention_node,
-)
-
-workflow.add_node(
-    "generate_candidates",
-    generate_candidates_node,
-)
-
-workflow.add_node(
-    "assess_candidates",
-    assess_candidates_node,
-)
-
-workflow.add_node(
-    "forced_review",
-    forced_review_node,
-)
-
-workflow.add_node(
-    "direct_resolve",
-    direct_resolve_node,
-)
-
-workflow.add_node(
-    "analyze_context",
-    analyze_context_node,
-)
-
-workflow.add_node(
-    "validate_recommendation",
-    validate_recommendation_node,
-)
-
-workflow.add_node(
-    "persist_decision",
-    persist_decision_node,
-)
+workflow.add_node("load_mention", load_mention_node)
+workflow.add_node("generate_candidates",generate_candidates_node)
+workflow.add_node("assess_candidates", assess_candidates_node)
+workflow.add_node("forced_review", forced_review_node)
+workflow.add_node("direct_resolve", direct_resolve_node)
+workflow.add_node("analyze_context", analyze_context_node)
+workflow.add_node("validate_recommendation", validate_recommendation_node)
+workflow.add_node("persist_decision", persist_decision_node)
 
 
 # START
-workflow.add_edge(
-    START,
-    "load_mention",
-)
-
-
-workflow.add_edge(
-    "load_mention",
-    "generate_candidates",
-)
-
-
-workflow.add_edge(
-    "generate_candidates",
-    "assess_candidates",
-)
-
+workflow.add_edge(START,"load_mention")
+workflow.add_edge("load_mention","generate_candidates")
+workflow.add_edge("generate_candidates", "assess_candidates")
 
 # ==========================================================
 # CONDITIONAL DECISION
 # ==========================================================
 
-workflow.add_conditional_edges(
-    "assess_candidates",
+workflow.add_conditional_edges("assess_candidates",
     route_after_assessment,
     {
-        "forced_review": (
-            "forced_review"
-        ),
-
-        "direct_resolve": (
-            "direct_resolve"
-        ),
-
-        "llm_analysis": (
-            "analyze_context"
-        ),
+        "forced_review": "forced_review",
+        "direct_resolve": "direct_resolve",
+        "llm_analysis": "analyze_context",
     },
 )
 
 
-workflow.add_edge(
-    "forced_review",
-    "persist_decision",
-)
-
-
-workflow.add_edge(
-    "direct_resolve",
-    "persist_decision",
-)
-
-
-workflow.add_edge(
-    "analyze_context",
-    "validate_recommendation",
-)
-
-
-workflow.add_edge(
-    "validate_recommendation",
-    "persist_decision",
-)
-
-
-workflow.add_edge(
-    "persist_decision",
-    END,
-)
+workflow.add_edge("forced_review", "persist_decision")
+workflow.add_edge("direct_resolve","persist_decision")
+workflow.add_edge("analyze_context","validate_recommendation")
+workflow.add_edge("validate_recommendation","persist_decision")
+workflow.add_edge("persist_decision", END)
 
 
 # ==========================================================
 # COMPILED GRAPH
 # ==========================================================
 
-resolution_assistant_graph = (
-    workflow.compile()
-)
+resolution_assistant_graph = workflow.compile()

@@ -1,34 +1,16 @@
-from fastapi import (
-    APIRouter,
-    Depends,
-    Query,
-    status,
-)
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.database import get_session
-from app.dependencies.auth import (
-    get_current_user,
-    require_roles,
-)
+from app.dependencies.auth import get_current_user, require_roles
 from app.models.user import User
 
-from app.schemas.category import (
-    CategoryCreate,
-    CategoryListResponse,
-    CategoryResponse,
-    CategoryUpdate,
-)
+from app.schemas.category import CategoryCreate, CategoryListResponse, CategoryResponse, CategoryUpdate
 
-from app.services.category_service import (
-    CategoryService,
-)
+from app.services.category_service import CategoryService
 
 
-router = APIRouter(
-    prefix="/categories",
-    tags=["Categories"],
-)
+router = APIRouter(prefix="/categories", tags=["Categories"])
 
 
 @router.post(

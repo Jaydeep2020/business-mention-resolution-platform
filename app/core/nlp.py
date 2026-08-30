@@ -48,14 +48,12 @@ GLINER_THRESHOLD = 0.45
 # LOAD GLINER MODEL
 # ==========================================================
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=1) # Load it once and reuse it for all mention-extraction requests.
 def get_nlp() -> GLiNER:
 
     try:
 
-        model = GLiNER.from_pretrained(
-            GLINER_MODEL_NAME
-        )
+        model = GLiNER.from_pretrained(GLINER_MODEL_NAME)
 
     except Exception as exc:
 
@@ -74,9 +72,7 @@ def get_nlp() -> GLiNER:
 # EXTRACT BUSINESS ENTITIES
 # ==========================================================
 
-def extract_business_entities(
-    text: str,
-) -> list[dict]:
+def extract_business_entities(text: str) -> list[dict]:
 
     if not text or not text.strip():
         return []
@@ -113,10 +109,7 @@ def extract_business_entities(
             (
                 entity["text"],
                 entity["label"],
-                round(
-                    float(entity["score"]),
-                    3,
-                ),
+                round(float(entity["score"]),3),
             )
             for entity in entities
         ]
@@ -132,11 +125,7 @@ def extract_business_entities(
 
     for entity in entities:
 
-        entity_label = (
-            entity["label"]
-            .strip()
-            .lower()
-        )
+        entity_label = entity["label"].strip().lower()
 
         # Important:
         # City/state/address can be detected by GLiNER,
@@ -154,21 +143,10 @@ def extract_business_entities(
         if len(cleaned_text) > 255:
             continue
 
-        start_char = int(
-            entity["start"]
-        )
+        start_char = int(entity["start"])
+        end_char = int(entity["end"])
 
-        end_char = int(
-            entity["end"]
-        )
-
-        normalized_text = (
-            " ".join(
-                cleaned_text
-                .lower()
-                .split()
-            )
-        )
+        normalized_text = " ".join(cleaned_text.lower().split())
 
         duplicate_key = (
             normalized_text,

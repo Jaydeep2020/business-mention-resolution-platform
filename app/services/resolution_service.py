@@ -8,18 +8,9 @@ from app.models.business import Business
 from app.models.mention import Mention
 from app.models.resolution_result import ResolutionResult
 
-from app.models.enums import (
-    ResolutionDecision,
-    ResolutionStatus,
-)
-
-from app.services.candidate_service import (
-    CandidateService,
-)
-
-from app.clients.document_client import (
-    DocumentClient,
-)
+from app.models.enums import (ResolutionDecision, ResolutionStatus)
+from app.services.candidate_service import CandidateService
+from app.clients.document_client import DocumentClient
 
 
 class ResolutionService:
@@ -28,11 +19,7 @@ class ResolutionService:
     MAX_CANDIDATES = 20
 
     @staticmethod
-    def resolve_mention(
-        session: Session,
-        mention_id: int,
-        max_candidates: int = 5,
-    ) -> dict:
+    def resolve_mention(session: Session, mention_id: int, max_candidates: int = 5) -> dict:
 
         # ==================================================
         # 0. SERVICE-LEVEL INPUT VALIDATION
@@ -44,60 +31,30 @@ class ResolutionService:
         # could also be called directly from tests,
         # scripts, background tasks, or another service.
 
-        if (
-            not isinstance(
-                mention_id,
-                int,
-            )
-            or isinstance(
-                mention_id,
-                bool,
-            )
-            or mention_id < 1
-        ):
+        if not isinstance(mention_id, int) or isinstance(mention_id, bool) or mention_id < 1:
 
             raise HTTPException(
-                status_code=(
-                    status.HTTP_400_BAD_REQUEST
-                ),
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
                     "mention_id must be a "
                     "positive integer."
                 ),
             )
 
-        if (
-            not isinstance(
-                max_candidates,
-                int,
-            )
-            or isinstance(
-                max_candidates,
-                bool,
-            )
-        ):
+        if not isinstance(max_candidates, int) or isinstance(max_candidates, bool):
 
             raise HTTPException(
-                status_code=(
-                    status.HTTP_400_BAD_REQUEST
-                ),
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
                     "max_candidates must be "
                     "an integer."
                 ),
             )
 
-        if (
-            max_candidates
-            < ResolutionService.MIN_CANDIDATES
-            or max_candidates
-            > ResolutionService.MAX_CANDIDATES
-        ):
+        if max_candidates < ResolutionService.MIN_CANDIDATES or max_candidates > ResolutionService.MAX_CANDIDATES:
 
             raise HTTPException(
-                status_code=(
-                    status.HTTP_400_BAD_REQUEST
-                ),
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
                     "max_candidates must be "
                     "between 1 and 20."
@@ -109,22 +66,13 @@ class ResolutionService:
         # ==================================================
 
         mention = (
-            session.execute(
-                select(Mention)
-                .where(
-                    Mention.id
-                    == mention_id
-                )
-            )
-            .scalar_one_or_none()
+            session.execute(select(Mention).where(Mention.id== mention_id)).scalar_one_or_none()
         )
 
         if mention is None:
 
             raise HTTPException(
-                status_code=(
-                    status.HTTP_404_NOT_FOUND
-                ),
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail="Mention not found",
             )
 
@@ -132,15 +80,10 @@ class ResolutionService:
         # 2. VALIDATE MENTION TEXT
         # ==================================================
 
-        if (
-            mention.text is None
-            or not mention.text.strip()
-        ):
+        if mention.text is None or not mention.text.strip():
 
             raise HTTPException(
-                status_code=(
-                    status.HTTP_422_UNPROCESSABLE_ENTITY
-                ),
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
                     "Mention text cannot be empty."
                 ),
@@ -150,15 +93,10 @@ class ResolutionService:
         # 3. MAKE SURE IT HAS NOT ALREADY BEEN PROCESSED
         # ==================================================
 
-        if (
-            mention.resolution_status
-            != ResolutionStatus.PENDING
-        ):
+        if mention.resolution_status != ResolutionStatus.PENDING:
 
             raise HTTPException(
-                status_code=(
-                    status.HTTP_409_CONFLICT
-                ),
+                status_code=status.HTTP_409_CONFLICT,
                 detail=(
                     "Mention has already gone "
                     "through resolution."
@@ -171,24 +109,14 @@ class ResolutionService:
 
         existing_result = (
             session.execute(
-                select(
-                    ResolutionResult.id
-                )
-                .where(
-                    ResolutionResult.mention_id
-                    == mention.id
-                )
-                .limit(1)
-            )
-            .scalar_one_or_none()
+                select(ResolutionResult.id).where(ResolutionResult.mention_id == mention.id).limit(1)
+            ).scalar_one_or_none()
         )
 
         if existing_result is not None:
 
             raise HTTPException(
-                status_code=(
-                    status.HTTP_409_CONFLICT
-                ),
+                status_code=status.HTTP_409_CONFLICT,
                 detail=(
                     "This pending mention already has "
                     "resolution results. Its state is "
@@ -200,20 +128,12 @@ class ResolutionService:
         # 5. FIND CANDIDATES
         # ==================================================
 
-        candidates = (
-            CandidateService.get_candidates(
-                session=session,
-                mention=mention,
-                max_candidates=max_candidates,
-            )
-        )
+        candidates = CandidateService.get_candidates(session=session, mention=mention, max_candidates=max_candidates)
 
         if not candidates:
 
             raise HTTPException(
-                status_code=(
-                    status.HTTP_404_NOT_FOUND
-                ),
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail=(
                     "No candidate businesses found "
                     "for this mention."
@@ -226,9 +146,7 @@ class ResolutionService:
         # but keep the service from processing more than
         # the requested amount.
 
-        candidates = candidates[
-            :max_candidates
-        ]
+        candidates = candidates[:max_candidates]
 
         # ==================================================
         # 6. VALIDATE CANDIDATE DATA
@@ -236,45 +154,24 @@ class ResolutionService:
 
         for candidate in candidates:
 
-            business = candidate.get(
-                "business"
-            )
+            business = candidate.get("business")
 
-            candidate_score = (
-                candidate.get(
-                    "score"
-                )
-            )
+            candidate_score = (candidate.get("score"))
 
             if business is None:
 
                 raise HTTPException(
-                    status_code=(
-                        status.HTTP_500_INTERNAL_SERVER_ERROR
-                    ),
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=(
                         "Candidate service returned "
                         "invalid business data."
                     ),
                 )
 
-            if (
-                not isinstance(
-                    candidate_score,
-                    (int, float),
-                )
-                or isinstance(
-                    candidate_score,
-                    bool,
-                )
-                or candidate_score < 0
-                or candidate_score > 1
-            ):
+            if not isinstance(candidate_score, (int, float)) or isinstance(candidate_score,bool) or candidate_score < 0 or candidate_score > 1:
 
                 raise HTTPException(
-                    status_code=(
-                        status.HTTP_500_INTERNAL_SERVER_ERROR
-                    ),
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=(
                         "Candidate service returned "
                         "an invalid confidence score."
@@ -287,14 +184,8 @@ class ResolutionService:
         # --------------------------------------------------
 
         best_candidate = candidates[0]
-
-        best_business = (
-            best_candidate["business"]
-        )
-
-        best_score = (
-            best_candidate["score"]
-        )
+        best_business = best_candidate["business"]
+        best_score = best_candidate["score"]
 
         # --------------------------------------------------
         # 6. Check ambiguity
@@ -304,58 +195,32 @@ class ResolutionService:
 
         if len(candidates) >= 2:
 
-            second_score = (
-                candidates[1]["score"]
-            )
+            second_score = candidates[1]["score"]
 
-            score_gap = (
-                best_score
-                - second_score
-            )
+            score_gap = best_score - second_score
 
-            if (
-                score_gap
-                < CandidateService.AMBIGUITY_GAP
-            ):
+            if score_gap < CandidateService.AMBIGUITY_GAP:
                 ambiguous = True
 
         # --------------------------------------------------
         # 7. Check verified status
         # --------------------------------------------------
 
-        is_verified = (
-            best_business.is_verified
-        )
+        is_verified = best_business.is_verified
 
         # --------------------------------------------------
         # 8. Decide result
         # --------------------------------------------------
 
-        can_auto_resolve = (
-            best_score
-            >= CandidateService.AUTO_RESOLUTION_THRESHOLD
-            and not ambiguous
-            and is_verified
-        )
+        can_auto_resolve = best_score >= CandidateService.AUTO_RESOLUTION_THRESHOLD and not ambiguous and is_verified
+
 
         if can_auto_resolve:
 
-            mention.resolution_status = (
-                ResolutionStatus.AUTO_RESOLVED
-            )
-
-            mention.resolved_business_id = (
-                best_business.id
-            )
-
-            mention.confidence_score = (
-                best_score
-            )
-
-            best_decision = (
-                ResolutionDecision.AUTO
-            )
-
+            mention.resolution_status = ResolutionStatus.AUTO_RESOLVED
+            mention.resolved_business_id = best_business.id
+            mention.confidence_score = best_score
+            best_decision = ResolutionDecision.AUTO
             note = (
                 "Automatically resolved because "
                 "confidence was above the threshold "
@@ -364,29 +229,18 @@ class ResolutionService:
 
         else:
 
-            mention.resolution_status = (
-                ResolutionStatus.SENT_FOR_REVIEWER
-            )
-
+            mention.resolution_status = ResolutionStatus.SENT_FOR_REVIEWER
             mention.resolved_business_id = None
-
-            mention.confidence_score = (
-                best_score
-            )
-
-            best_decision = (
-                ResolutionDecision.REVIEW
-            )
+            mention.confidence_score = best_score
+            best_decision = ResolutionDecision.REVIEW
 
             if not is_verified:
-
                 note = (
                     "Sent for review because the "
                     "matched business is unverified."
                 )
 
             elif ambiguous:
-
                 note = (
                     "Sent for review because multiple "
                     "candidate businesses have similar "
@@ -394,7 +248,6 @@ class ResolutionService:
                 )
 
             else:
-
                 note = (
                     "Sent for review because confidence "
                     "did not reach the automatic "
@@ -405,22 +258,17 @@ class ResolutionService:
         # 9. Store all candidate results
         # --------------------------------------------------
 
-        for index, candidate in enumerate(
-            candidates
-        ):
+        for index, candidate in enumerate(candidates):
 
             business = candidate["business"]
 
             if index == 0:
-
                 decision = best_decision
                 candidate_note = note
 
             else:
 
-                decision = (
-                    ResolutionDecision.REVIEW
-                )
+                decision = ResolutionDecision.REVIEW
 
                 candidate_note = (
                     "Candidate generated during "
@@ -457,73 +305,32 @@ class ResolutionService:
 
         document_id = None
 
-        if (
-                mention.resolution_status
-                == ResolutionStatus.AUTO_RESOLVED
-        ):
-            document_id = (
-                DocumentClient
-                .generate_resolution_summary(
-                    mention_id=mention.id,
-                )
-            )
+        if mention.resolution_status == ResolutionStatus.AUTO_RESOLVED:
+
+            document_id = DocumentClient.generate_resolution_summary(mention_id=mention.id)
 
         return {
             "mention_id": mention.id,
             "mention_text": mention.text,
-            "resolution_status": (
-                mention.resolution_status.value
-            ),
-            "confidence_score": (
-                mention.confidence_score
-            ),
-            "resolved_business_id": (
-                mention.resolved_business_id
-            ),
+            "resolution_status": mention.resolution_status.value,
+            "confidence_score": mention.confidence_score,
+            "resolved_business_id": mention.resolved_business_id,
             "document_id": document_id,
             "candidates": [
                 {
-                    "business_id": (
-                        candidate["business"].id
-                    ),
-                    "catalog_business_id": (
-                        candidate["business"].business_id
-                    ),
-                    "business_name": (
-                        candidate["business"].name
-                    ),
-                    "city": (
-                        candidate["business"].city
-                    ),
-                    "state": (
-                        candidate["business"].state
-                    ),
-                    "address": (
-                        candidate["business"].address
-                    ),
-                    "score": (
-                        candidate["score"]
-                    ),
-                    "name_score": (
-                        candidate["name_score"]
-                    ),
-                    "embedding_score": (
-                        candidate.get(
-                            "embedding_score"
-                        )
-                    ),
-                    "city_score": (
-                        candidate["city_score"]
-                    ),
-                    "state_score": (
-                        candidate["state_score"]
-                    ),
-                    "address_score": (
-                        candidate["address_score"]
-                    ),
-                    "is_verified": (
-                        candidate["business"].is_verified
-                    ),
+                    "business_id": candidate["business"].id,
+                    "catalog_business_id": candidate["business"].business_id,
+                    "business_name": candidate["business"].name,
+                    "city": candidate["business"].city,
+                    "state": candidate["business"].state,
+                    "address": candidate["business"].address,
+                    "score": candidate["score"],
+                    "name_score": candidate["name_score"],
+                    "embedding_score": candidate.get("embedding_score"),
+                    "city_score": candidate["city_score"],
+                    "state_score": candidate["state_score"],
+                    "address_score": candidate["address_score"],
+                    "is_verified": candidate["business"].is_verified,
                 }
                 for candidate in candidates
             ],
@@ -682,24 +489,12 @@ class ResolutionService:
     # ------------------------------------------------------
 
     @staticmethod
-    def approve_resolution(
-        session: Session,
-        result_id: int,
-        reviewer_id: int,
-        notes: str | None = None,
-    ) -> ResolutionResult:
+    def approve_resolution(session: Session, result_id: int, reviewer_id: int, notes: str | None = None) -> ResolutionResult:
 
         result = (
             session.execute(
-                select(
-                    ResolutionResult
-                )
-                .where(
-                    ResolutionResult.id
-                    == result_id
-                )
-            )
-            .scalar_one_or_none()
+                select(ResolutionResult).where(ResolutionResult.id == result_id)
+            ).scalar_one_or_none()
         )
 
         if result is None:
@@ -710,13 +505,8 @@ class ResolutionService:
 
         mention = (
             session.execute(
-                select(Mention)
-                .where(
-                    Mention.id
-                    == result.mention_id
-                )
-            )
-            .scalar_one_or_none()
+                select(Mention).where(Mention.id == result.mention_id)
+            ).scalar_one_or_none()
         )
 
         if mention is None:
@@ -725,10 +515,7 @@ class ResolutionService:
                 detail="Mention not found",
             )
 
-        if (
-            mention.resolution_status
-            != ResolutionStatus.SENT_FOR_REVIEWER
-        ):
+        if mention.resolution_status != ResolutionStatus.SENT_FOR_REVIEWER:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -742,10 +529,8 @@ class ResolutionService:
         # candidate.
         # --------------------------------------------------
 
-        if (
-            result.decision
-            != ResolutionDecision.REVIEW
-        ):
+        if result.decision != ResolutionDecision.REVIEW:
+
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -758,9 +543,7 @@ class ResolutionService:
         # Set selected result as approved
         # --------------------------------------------------
 
-        result.decision = (
-            ResolutionDecision.APPROVED
-        )
+        result.decision = ResolutionDecision.APPROVED
 
         result.reviewer_id = reviewer_id
         result.notes = notes
@@ -769,17 +552,9 @@ class ResolutionService:
         # Update mention
         # --------------------------------------------------
 
-        mention.resolved_business_id = (
-            result.business_id
-        )
-
-        mention.confidence_score = (
-            result.score
-        )
-
-        mention.resolution_status = (
-            ResolutionStatus.APPROVED
-        )
+        mention.resolved_business_id = result.business_id
+        mention.confidence_score = result.score
+        mention.resolution_status = ResolutionStatus.APPROVED
 
         # --------------------------------------------------
         # Mark other candidates rejected
@@ -787,29 +562,14 @@ class ResolutionService:
 
         other_results = list(
             session.execute(
-                select(
-                    ResolutionResult
-                )
-                .where(
-                    ResolutionResult.mention_id
-                    == mention.id,
-                    ResolutionResult.id
-                    != result.id,
-                )
-            )
-            .scalars()
-            .all()
+                select(ResolutionResult).where(ResolutionResult.mention_id == mention.id, ResolutionResult.id != result.id)
+            ).scalars().all()
         )
 
         for other_result in other_results:
 
-            other_result.decision = (
-                ResolutionDecision.REJECTED
-            )
-
-            other_result.reviewer_id = (
-                reviewer_id
-            )
+            other_result.decision = ResolutionDecision.REJECTED
+            other_result.reviewer_id = reviewer_id
 
         try:
 
@@ -825,9 +585,7 @@ class ResolutionService:
         # Generate resolution summary after approval
         # --------------------------------------------------
 
-        DocumentClient.generate_resolution_summary(
-            mention_id=mention.id,
-        )
+        DocumentClient.generate_resolution_summary(mention_id=mention.id)
 
         return result
 
@@ -836,24 +594,12 @@ class ResolutionService:
     # ------------------------------------------------------
 
     @staticmethod
-    def reject_resolution(
-        session: Session,
-        result_id: int,
-        reviewer_id: int,
-        notes: str | None = None,
-    ) -> ResolutionResult:
+    def reject_resolution(session: Session, result_id: int, reviewer_id: int, notes: str | None = None) -> ResolutionResult:
 
         result = (
             session.execute(
-                select(
-                    ResolutionResult
-                )
-                .where(
-                    ResolutionResult.id
-                    == result_id
-                )
-            )
-            .scalar_one_or_none()
+                select(ResolutionResult).where(ResolutionResult.id == result_id)
+            ).scalar_one_or_none()
         )
 
         if result is None:
@@ -864,13 +610,8 @@ class ResolutionService:
 
         mention = (
             session.execute(
-                select(Mention)
-                .where(
-                    Mention.id
-                    == result.mention_id
-                )
-            )
-            .scalar_one_or_none()
+                select(Mention).where(Mention.id == result.mention_id)
+            ).scalar_one_or_none()
         )
 
         if mention is None:
@@ -879,10 +620,7 @@ class ResolutionService:
                 detail="Mention not found",
             )
 
-        if (
-            mention.resolution_status
-            != ResolutionStatus.SENT_FOR_REVIEWER
-        ):
+        if mention.resolution_status != ResolutionStatus.SENT_FOR_REVIEWER:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -891,10 +629,7 @@ class ResolutionService:
                 ),
             )
 
-        if (
-            result.decision
-            != ResolutionDecision.REVIEW
-        ):
+        if result.decision != ResolutionDecision.REVIEW:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -903,17 +638,11 @@ class ResolutionService:
                 ),
             )
 
-        result.decision = (
-            ResolutionDecision.REJECTED
-        )
-
+        result.decision = ResolutionDecision.REJECTED
         result.reviewer_id = reviewer_id
         result.notes = notes
 
-        mention.resolution_status = (
-            ResolutionStatus.REJECTED
-        )
-
+        mention.resolution_status = ResolutionStatus.REJECTED
         mention.resolved_business_id = None
 
         try:

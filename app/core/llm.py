@@ -1,8 +1,6 @@
 from functools import lru_cache
 
-from langchain_openai import (
-    ChatOpenAI,
-)
+from langchain_openai import ChatOpenAI
 
 from app.core.config import settings
 
@@ -11,10 +9,7 @@ from app.core.config import settings
 # COMMON LLM CREATOR
 # ==========================================================
 
-def create_llm(
-    model_name: str,
-    timeout: float,
-) -> ChatOpenAI:
+def create_llm(model_name: str, timeout: float) -> ChatOpenAI:
 
     if not settings.OPENAI_API_KEY:
 
@@ -39,10 +34,7 @@ def get_qa_llm() -> ChatOpenAI:
 
     return create_llm(
         model_name=settings.QA_MODEL,
-        timeout=(
-            settings
-            .QA_LLM_TIMEOUT_SECONDS
-        ),
+        timeout=settings.QA_LLM_TIMEOUT_SECONDS
     )
 
 
@@ -54,11 +46,6 @@ def get_qa_llm() -> ChatOpenAI:
 def get_assistant_llm() -> ChatOpenAI:
 
     return create_llm(
-        model_name=(
-            settings.ASSISTANT_MODEL
-        ),
-        timeout=(
-            settings
-            .ASSISTANT_LLM_TIMEOUT_SECONDS
-        ),
+        model_name=settings.ASSISTANT_MODEL,
+        timeout=settings.ASSISTANT_LLM_TIMEOUT_SECONDS,
     )

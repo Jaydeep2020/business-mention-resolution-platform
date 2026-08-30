@@ -3,18 +3,10 @@
 
 import json
 
-from fastapi import (
-    HTTPException,
-    status,
-)
+from fastapi import HTTPException, status
 
-from app.core.llm import (
-    get_qa_llm,
-)
-
-from app.schemas.qa import (
-    CatalogQueryPlan,
-)
+from app.core.llm import get_qa_llm
+from app.schemas.qa import CatalogQueryPlan
 
 
 class LLMService:
@@ -24,20 +16,13 @@ class LLMService:
     # ======================================================
 
     @staticmethod
-    def create_catalog_query_plan(
-        question: str,
-    ) -> CatalogQueryPlan:
+    def create_catalog_query_plan(question: str) -> CatalogQueryPlan:
 
         try:
 
             llm = get_qa_llm()
 
-            structured_llm = (
-                llm.with_structured_output(
-                    CatalogQueryPlan,
-                    method="json_schema",
-                )
-            )
+            structured_llm = llm.with_structured_output(CatalogQueryPlan, method="json_schema")
 
             system_prompt = """
 You convert natural-language questions about a local
@@ -105,9 +90,7 @@ Important rules:
             ]
 
             plan = (
-                structured_llm.invoke(
-                    messages
-                )
+                structured_llm.invoke(messages)
             )
 
             return plan
@@ -119,10 +102,7 @@ Important rules:
         except Exception as exc:
 
             raise HTTPException(
-                status_code=(
-                    status
-                    .HTTP_503_SERVICE_UNAVAILABLE
-                ),
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=(
                     "Question understanding service "
                     "is currently unavailable."
@@ -135,14 +115,9 @@ Important rules:
     # ======================================================
 
     @staticmethod
-    def generate_grounded_answer(
-        question: str,
-        plan: CatalogQueryPlan,
-        database_result: dict,
-    ) -> str:
+    def generate_grounded_answer(question: str, plan: CatalogQueryPlan, database_result: dict) -> str:
 
         try:
-
             llm = get_qa_llm()
 
             system_prompt = """
@@ -172,12 +147,8 @@ Keep the answer concise and useful.
 
             payload = {
                 "question": question,
-                "query_plan": (
-                    plan.model_dump()
-                ),
-                "database_result": (
-                    database_result
-                ),
+                "query_plan": (plan.model_dump()),
+                "database_result": database_result,
             }
 
             messages = [
@@ -187,53 +158,30 @@ Keep the answer concise and useful.
                 ),
                 (
                     "human",
-                    json.dumps(
-                        payload,
-                        ensure_ascii=False,
-                        default=str,
-                    ),
+                    json.dumps(payload,ensure_ascii=False,default=str),
                 ),
             ]
 
-            response = llm.invoke(
-                messages
-            )
+            response = llm.invoke(messages)
 
             # Newer LangChain messages expose .text.
-            response_text = getattr(
-                response,
-                "text",
-                None,
-            )
+            response_text = getattr(response, "text", None)
 
             if response_text:
 
-                return str(
-                    response_text
-                ).strip()
+                return str(response_text).strip()
 
             # Safe fallback.
-            if isinstance(
-                response.content,
-                str,
-            ):
+            if isinstance(response.content, str):
 
-                return (
-                    response.content
-                    .strip()
-                )
+                return response.content.strip()
 
-            return str(
-                response.content
-            ).strip()
+            return str(response.content).strip()
 
         except Exception as exc:
 
             raise HTTPException(
-                status_code=(
-                    status
-                    .HTTP_503_SERVICE_UNAVAILABLE
-                ),
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=(
                     "Answer generation service "
                     "is currently unavailable."
